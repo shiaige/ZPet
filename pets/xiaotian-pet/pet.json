@@ -1,0 +1,22 @@
+{
+  "id": "shengguang-dimo",
+  "displayName": "小天",
+  "description": "蓝白圣光小精灵 Codex 桌宠：蓝色尖刺鬃毛、白色身体、金色胸饰红宝石眼。9 状态全动作。",
+  "spritesheetPath": "spritesheet.webp",
+  "cell": {
+    "width": 192,
+    "height": 208
+  },
+  "columns": 8,
+  "frames": [
+    6,
+    8,
+    8,
+    4,
+    5,
+    8,
+    6,
+    6,
+    6
+  ]
+}

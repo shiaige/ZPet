@@ -1,0 +1,10 @@
+{
+  "name": "zpet",
+  "version": "0.4.7",
+  "description": "Codex-style desktop pet for ZCode: a transparent always-on-top companion that reflects agent working state in real time. Zero runtime dependencies (bundled daemon). Compatible with Codex pet assets (pet.json + spritesheet), including the Petdex ecosystem.",
+  "author": {
+    "name": "shiaige"
+  },
+  "license": "MIT",
+  "hooks": "hooks"
+}

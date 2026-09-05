@@ -1,0 +1,10 @@
+{
+  "name": "zpet-marketplace",
+  "plugins": [
+    {
+      "name": "zpet",
+      "source": "./",
+      "description": "Codex-style desktop pet for ZCode (transparent, always-on-top, real-time agent state animations; compatible with Codex/Petdex pet assets)."
+    }
+  ]
+}
