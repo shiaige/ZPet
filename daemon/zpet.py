@@ -1,4 +1,4 @@
-#!/usr/bin/env pythonw
+#!/usr/bin/env python3
 """zpet daemon — official Codex pet behavior core plus optional extras.
 
 Official core (from the Codex docs, the hatch-pet atlas contract, and the
@@ -22,6 +22,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 
@@ -110,8 +111,13 @@ def log(*a):
 
 
 def reduced_motion():
-    """Windows 'reduce animations' -> official pets render a static frame."""
+    """System 'reduce motion' -> official pets render a static frame."""
     try:
+        if sys.platform == "darwin":
+            out = subprocess.run(
+                ["defaults", "read", "com.apple.universalaccess", "reduceMotion"],
+                capture_output=True, text=True, timeout=2)
+            return out.stdout.strip() == "1"
         v = ctypes.c_bool()
         ctypes.windll.user32.SystemParametersInfoW(
             0x1042, 0, ctypes.byref(v), 0)  # SPI_GETCLIENTAREAANIMATION
@@ -222,6 +228,8 @@ class KeyboardMonitor:
         self._proc = None
 
     def install(self):
+        if sys.platform != "win32":
+            return  # LL keyboard hook is Windows-only; the reaction stays off
         user32 = ctypes.windll.user32
         self._proc = ctypes.WINFUNCTYPE(
             ctypes.c_long, ctypes.c_int, ctypes.c_uint, ctypes.c_void_p)(self._on_key)
@@ -245,6 +253,9 @@ class Bubble(QtWidgets.QWidget):
         super().__init__(None, QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool |
                          QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # macOS hides Tool windows whenever the owning app deactivates;
+        # without this the pet vanishes the moment another app gets focus
+        self.setAttribute(QtCore.Qt.WA_MacAlwaysShowToolWindow, True)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
         self.label = QtWidgets.QLabel(self)
         self.label.setWordWrap(True)
@@ -285,12 +296,15 @@ class PetWindow(QtWidgets.QWidget):
         super().__init__(None, QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool |
                          QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # macOS hides Tool windows whenever the owning app deactivates;
+        # without this the pet vanishes the moment another app gets focus
+        self.setAttribute(QtCore.Qt.WA_MacAlwaysShowToolWindow, True)
         self.setMouseTracking(True)
         self.setCursor(QtCore.Qt.OpenHandCursor)
 
         cfg = {"pet": "paimon-v2", "zoom": 1.0, "autonomy": "lively",
                "resident": True, "hover_fx": True, "key_fx": True,
-               "x": None, "y": None}
+               "speed": 1.0, "x": None, "y": None}
         try:
             cfg.update(json.load(open(STATE_FILE, encoding="utf-8")))
         except Exception:
@@ -382,7 +396,10 @@ class PetWindow(QtWidgets.QWidget):
         spec = CLIPS[key]
         row = spec["row"]
         frames = self.pet.rows[row]
-        dur = round(spec["loop_ms"] / len(frames))
+        # speed < 1 stretches every frame: 0.5 plays the official tempo at
+        # half pace (the main lever against a jittery pet)
+        speed = max(0.05, self.config.get("speed", 1.0))
+        dur = round(spec["loop_ms"] / (len(frames) * speed))
         return [(row, i, dur) for i in range(len(frames))]
 
     def compose(self, key, reason, mode="state", force=False):
@@ -502,8 +519,11 @@ class PetWindow(QtWidgets.QWidget):
         seq = self._work_rot_seq
 
         def rotate():
+            # autonomy=off means "stay put": skip the 6-12s work rotation too,
+            # the pet holds a single clip loop while working
             if (seq != self._work_rot_seq or self.agg_state != "running"
-                    or self.control == "dragging"):
+                    or self.control == "dragging"
+                    or AUTONOMY_PRESETS.get(self.config.get("autonomy", "lively")) is None):
                 return
             key = self._state_clip("running", exclude=(self.clip_key,))
             if key in ("running-left", "running-right"):
@@ -829,6 +849,42 @@ class PetWindow(QtWidgets.QWidget):
             act.setCheckable(True)
             act.setChecked(z == self.config["zoom"])
             act.triggered.connect(lambda _, z=z: self.set_zoom(z))
+        speed = m.addMenu("速度")
+        srow = QtWidgets.QWidget()
+        slay = QtWidgets.QHBoxLayout(srow)
+        slay.setContentsMargins(10, 4, 10, 4)
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal, srow)
+        slider.setRange(25, 300)
+        slider.setSingleStep(5)
+        slider.setPageStep(5)
+        slider.setTickInterval(25)
+        slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        slider.setValue(int(self.config.get("speed", 1.0) * 100))
+        slider.setMinimumWidth(140)
+        slab = QtWidgets.QLabel(f"{slider.value()}%", srow)
+        slab.setMinimumWidth(40)
+
+        def snap(v):
+            return 5 * round(v / 5)
+
+        def on_slider(v):
+            sv = snap(v)
+            slab.setText(f"{sv}%")
+            # apply on click/keyboard steps, preview only while dragging
+            # (recomposing every tick makes the pet stutter on frame 0)
+            if not slider.isSliderDown():
+                self.set_speed(sv / 100.0)
+
+        slider.valueChanged.connect(on_slider)
+        slider.sliderReleased.connect(
+            lambda: self.set_speed(snap(slider.value()) / 100.0))
+        slay.addWidget(QtWidgets.QLabel("慢", srow))
+        slay.addWidget(slider)
+        slay.addWidget(QtWidgets.QLabel("快", srow))
+        slay.addWidget(slab)
+        sact = QtWidgets.QWidgetAction(speed)
+        sact.setDefaultWidget(srow)
+        speed.addAction(sact)
         auto = m.addMenu("自主动作")
         for key, name in (("off", "关"), ("mild", "温和"), ("lively", "活泼"),
                           ("hyper", "超活泼")):
@@ -889,6 +945,18 @@ class PetWindow(QtWidgets.QWidget):
         self.show_frame()
         self.save_config()
 
+    def set_speed(self, s):
+        if s == self.config.get("speed", 1.0):
+            return
+        self.config["speed"] = s
+        self.save_config()
+        self.frame_gen += 1
+        # re-time the current playlist; force=True is required because the
+        # anti-churn early-return in compose() (same clip+mode) would leave
+        # the frame chain dead after the frame_gen bump above
+        self.compose(self.clip_key or "idle", "speed",
+                     mode=self.play_mode or "loop", force=True)
+
     def set_autonomy(self, key):
         self.config["autonomy"] = key
         self.save_config()
@@ -919,6 +987,13 @@ def any_zcode_process():
     """In-process Toolhelp32 scan for ZCode.exe. Any failure assumes ZCode is
     alive: a scan problem must never cost the pet its life."""
     try:
+        if sys.platform == "darwin":
+            for name in ("ZCode", "zcode-cli"):
+                r = subprocess.run(["pgrep", "-x", name],
+                                   capture_output=True, timeout=5)
+                if r.returncode == 0:
+                    return True
+            return False
         k32 = ctypes.windll.kernel32
 
         class PE32(ctypes.Structure):  # PROCESSENTRY32W
@@ -951,6 +1026,14 @@ def any_zcode_process():
 
 def focus_zcode():
     """Raise a visible window whose title contains 'zcode'."""
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(["osascript", "-e",
+                            'tell application "ZCode" to activate'],
+                           capture_output=True, timeout=5)
+        except Exception as ex:
+            log("focus failed:", ex)
+        return
     user32 = ctypes.windll.user32
     found = []
 

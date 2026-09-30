@@ -3,4 +3,6 @@ __pycache__/
 build/         
 dist/         
 *.spec         
-sender/target/  
+sender/target/  .venv/
+art-backups/
+tools/__pycache__/
