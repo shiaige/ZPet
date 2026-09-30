@@ -1,0 +1,22 @@
+{
+  "id": "mochi-calm",
+  "displayName": "绵绵",
+  "description": "奶白小兔绵绵：九种独立姿势，侧向轻移、单爪招手、双爪庆祝、委屈收爪、歪头等待、键盘工作与眼镜审查；温和微动画。",
+  "spritesheetPath": "spritesheet.webp",
+  "cell": {
+    "width": 192,
+    "height": 208
+  },
+  "columns": 8,
+  "frames": [
+    8,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ]
+}
